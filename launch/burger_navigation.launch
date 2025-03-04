@@ -1,0 +1,15 @@
+<launch>
+
+    <include file="$(find particle_filter_localization)/launch/burger_robot.launch"/>
+    
+    <arg name="map_file" default="$(find particle_filter_localization)/maps/bricks_arena.yaml"/>
+    <!-- <arg name="map_file" default="$(find turtlebot3_navigation)/maps/map.yaml"/> -->
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)"/>
+
+    <!-- <node pkg="particle_filter_localization" type="particle_filter_localization.py" name="particle_filter_localization">
+        <param name="num_particles" value="1000"/>
+    </node> -->
+
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find particle_filter_localization)/rviz/waffle_navigation.rviz"/>
+
+</launch>

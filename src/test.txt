@@ -1,0 +1,144 @@
+        # # dilation for inflate the occupancy grid
+        # kernel = np.ones((7,7), np.uint8)   # kernel for dilation
+        # threshold_value = 90
+        # _, binary_image = cv.threshold(self.map_image.astype(np.uint8), threshold_value, 255, cv.THRESH_BINARY)     # thresholding
+        # binary_image = np.flip(binary_image, axis=0)    # flip the image since it has a flipped x axis in the RViz map
+
+        # dilated_map_image = cv.dilate(binary_image, kernel, iterations=1)   # dilate
+        # map_pixel_idx = np.where(dilated_map_image == 0)
+        # print(map_pixel_idx)
+
+                # cv.imshow("image", )
+        # cv.waitKey(0)
+        # cv.destroyAllWindows()
+
+
+
+
+
+            def odomCallback(self, odom_msg):
+        if not self.pre_odom_msg:
+            self.pre_odom_msg = odom_msg
+            return
+        
+        self.cur_odom_msg = odom_msg
+
+        # Distance change
+        delta_x = self.cur_odom_msg.pose.pose.position.x - self.pre_odom_msg.pose.pose.position.x
+        delta_y = self.cur_odom_msg.pose.pose.position.y - self.pre_odom_msg.pose.pose.position.y
+
+        distance = (delta_x**2 + delta_y**2)**0.5
+
+        # Previous robot orientation
+        pre_theta = 2 * math.acos(self.pre_odom_msg.pose.pose.orientation.w)
+
+        if self.pre_odom_msg.pose.pose.orientation.z < 0.:
+            pre_theta = -pre_theta
+
+        # Figure out if the direction is backward
+        if (pre_theta < 0 and delta_y > 0) or (pre_theta > 0 and delta_y < 0):
+            distance = -distance
+
+        # Current orientation
+        theta = 2 * math.acos(self.cur_odom_msg.pose.pose.orientation.w)
+
+        if odom_msg.pose.pose.orientation.z < 0.:
+            theta = -theta
+
+        # Rotation since the previous odometry message
+        rotation = theta - pre_theta
+
+        # Return if the robot hasn't moved
+        if distance == 0 and rotation == 0:
+            return
+        
+        for p in self.pose_array:
+            distance_noise = self.normalSampling(0, self.motion_distance_noise_stddev)
+            rotation_noise = self.normalSampling(0, self.motion_rotation_noise_stddev)
+            _, _, theta = self.convertToEuler(p.pose.orientation)
+            p.pose.position.x += (distance + distance_noise) * math.cos(theta)
+            p.pose.position.y += (distance + distance_noise) * math.sin(theta)
+            p.
+
+    def initializeParticles(self):
+        particles = []
+
+        # particles.header.frame_id = "map"
+        # particles.header.stamp = rospy.Time.now()
+        # particles.header.seq = self.particles_sequence_number
+        # self.particles_sequence_number += 1
+
+
+        for particle in range(self.num_particles):
+            part = self.getParticles()
+            particles.append(part)
+        
+        # self.particles_array = particles    
+        # print(self.particles_array)   
+
+        # removing particles in the occupied space
+        valid_particles = [] #PoseArray()
+        c = 0
+        for particle in particles:
+
+            # check whether the particle in the occupied space
+            if self.isValidParticle(particle.pose):
+                valid_particles.append(particle)
+                c += 1
+        # self.particles_array = valid_particles
+
+        self.pose_array = PoseArray()
+        self.pose_array.header.frame_id = "map"
+        self.pose_array.header.stamp = rospy.Time.now()
+        self.pose_array.header.seq = self.particles_sequence_number
+        self.particles_sequence_number += 1
+
+        self.pose_array.poses = [p.pose for p in valid_particles]
+        self.particlesPub.publish(self.pose_array)
+
+        rospy.loginfo(f"{c} Particles are initialized.")
+        
+    
+    def getParticles(self):
+        if self.sampling_method == "uniform":
+            x = self.uniformSampling(self.map_x_min, self.map_x_max)
+            y = self.uniformSampling(self.map_y_min, self.map_y_max)
+            theta = radians(self.uniformSampling(-180, 180))
+            quaternion = quaternion_from_euler(0, 0, theta)
+            
+            pose = Pose()
+            pose.position.x = x
+            pose.position.y = y
+            pose.orientation.z = quaternion[2]
+            pose.orientation.w = quaternion[3]
+            weight = 1.0
+            particle = Particle(pose, weight)
+
+        return particle
+
+    def isValidParticle(self, particle):
+        # get the x and y pixel values for x and y distance vakues
+        p_x = self.map_origin.position.x - particle.position.x
+        p_y = self.map_origin.position.y - particle.position.y
+        x_pixel = int(abs(p_x) / self.map.info.resolution)
+        y_pixel = self.map_height - int(abs(p_y) / self.map.info.resolution)
+        
+        if self.dilated_map_image[y_pixel][x_pixel] != 255:
+            return True
+        return False
+
+        # cv.resizeWindow("image", self.map_width, self.map_height)
+        # cv.imshow("image", self.dilated_map_image)
+        # cv.waitKey(0)
+        # cv.destroyAllWindows()
+
+    def convertToEuler(self, quaternion):
+        roll, pitch, yaw = euler_from_quaternion([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
+        return roll, pitch, yaw
+            
+    
+    def uniformSampling(self, a, b):
+        return random.uniform(min(a, b), max(a, b))
+
+    def normalSampling(self, mean, std):
+        return np.random.normal(mean, std)
